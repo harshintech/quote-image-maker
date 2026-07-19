@@ -18,7 +18,6 @@ async function addQuote() {
 
   document.getElementById("status").innerText = data.message;
 }
-
 async function generate() {
   const quote = document.getElementById("quote").value.trim();
 
@@ -27,27 +26,39 @@ async function generate() {
     return;
   }
 
-  const response = await fetch("/generate", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      quote,
-    }),
-  });
+  const button = document.getElementById("generateBtn");
+  button.disabled = true;
+  button.innerText = "Generating...";
+  document.getElementById("status").innerText = "Uploading...";
 
-  if (!response.ok) {
+  try {
+    const response = await fetch("/generate", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        quote,
+      }),
+    });
+
+    if (!response.ok) {
+      throw new Error("Generation failed");
+    }
+
+    const data = await response.json();
+
+    console.log(data.imageUrl);
+
+    document.getElementById("status").innerText =
+      "Uploaded successfully!";
+
+    document.getElementById("quote").value = "";
+  } catch (err) {
     alert("Generation failed");
-    return;
+    document.getElementById("status").innerText = "Something went wrong.";
+  } finally {
+    button.disabled = false;
+    button.innerText = "Generate Photos";
   }
-
-  const data = await response.json();
-
-  console.log(data.imageUrl);
-
-  document.getElementById("status").innerText = "Uploaded successfully!";
-
-  document.getElementById("quote").value = "";
 }
-  
