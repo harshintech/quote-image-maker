@@ -1,5 +1,10 @@
 async function addQuote() {
-  const quote = document.getElementById("quote").value;
+  const quote = document.getElementById("quote").value.trim();
+
+  if (!quote) {
+    document.getElementById("status").innerText = "Please enter a quote.";
+    return;
+  }
 
   const res = await fetch("/add-quote", {
     method: "POST",
@@ -12,23 +17,37 @@ async function addQuote() {
   const data = await res.json();
 
   document.getElementById("status").innerText = data.message;
-
-  document.getElementById("quote").value = "";
 }
 
 async function generate() {
-  document.getElementById("status").innerText = "Generating videos...";
+  const quote = document.getElementById("quote").value.trim();
+
+  if (!quote) {
+    alert("Enter a quote");
+    return;
+  }
 
   const response = await fetch("/generate", {
     method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      quote,
+    }),
   });
 
-  const blob = await response.blob();
+  if (!response.ok) {
+    alert("Generation failed");
+    return;
+  }
 
-  const url = window.URL.createObjectURL(blob);
+  const data = await response.json();
 
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = "reels.zip";
-  a.click();
+  console.log(data.imageUrl);
+
+  document.getElementById("status").innerText = "Uploaded successfully!";
+
+  document.getElementById("quote").value = "";
 }
+  

@@ -5,21 +5,9 @@ const { createCanvas, loadImage, registerFont } = require("canvas");
 // =======================
 // Register Font
 // =======================
-const fontPath = path.join(__dirname, "fonts", "Lora-Regular.ttf");
-const fontPath2 = path.join(__dirname, "fonts", "Poppins-Regular.ttf");
-
-
-console.log(fontPath);
-console.log("Exists:", fs.existsSync(fontPath));
-
-registerFont(fontPath, {
-  family: "Lora",
-});
-
-registerFont(fontPath2, {
+registerFont(path.join(__dirname, "fonts", "Poppins-Regular.ttf"), {
   family: "Poppins",
 });
-
 
 // =======================
 // Ensure output folder
@@ -59,12 +47,12 @@ async function generate() {
   // Quote Style
   // =======================
 
-  const fontSize = 40;
+  const fontSize = 38;
   const lineHeight = 60;
   const maxWidth = 820;
 
   ctx.fillStyle = "#FFFFFF";
-  ctx.font = `${fontSize}px Lora`;
+  ctx.font = `${fontSize}px Poppins`;
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
 
@@ -173,3 +161,87 @@ ctx.restore();
 }
 
 generate().catch(console.error);
+
+---------
+server.json
+
+const express = require("express");
+const fs = require("fs");
+const path = require("path");
+const { exec } = require("child_process");
+
+const app = express();
+
+app.use(express.json());
+app.use(express.static("frontend"));
+
+const QUEUE_FILE = "quotes.json";
+
+// Create quotes.json if it doesn't exist
+if (!fs.existsSync(QUEUE_FILE)) {
+  fs.writeFileSync(QUEUE_FILE, "[]");
+}
+
+// Home page
+app.get("/", (req, res) => {
+  res.sendFile(path.join(__dirname, "frontend", "index.html"));
+});
+
+// ==========================
+// Add Quote
+// ==========================
+app.post("/add-quote", (req, res) => {
+  const { quote } = req.body;
+
+  if (!quote || quote.trim() === "") {
+    return res.status(400).json({
+      message: "Quote is empty",
+    });
+  }
+
+  // Store ONLY ONE quote
+  fs.writeFileSync(
+    QUEUE_FILE,
+    JSON.stringify([quote.trim()], null, 2)
+  );
+
+  res.json({
+    message: "Quote added successfully ✅",
+  });
+});
+
+// ==========================
+// Generate Image
+// ==========================
+app.post("/generate", (req, res) => {
+  const { quote } = req.body;
+
+  if (!quote || quote.trim() === "") {
+    return res.status(400).send("Quote required");
+  }
+
+  fs.writeFileSync(
+    "quotes.json",
+    JSON.stringify([quote.trim()], null, 2)
+  );
+
+  exec("node generateImages.js", (err, stdout, stderr) => {
+    if (err) {
+      console.error(stderr);
+      return res.status(500).send(stderr);
+    }
+
+    const imagePath = path.join(__dirname, "reels", "reel.png");
+
+    res.download(imagePath, "reel.png", () => {
+      if (fs.existsSync(imagePath))
+        fs.unlinkSync(imagePath);
+
+      fs.writeFileSync("quotes.json", "[]");
+    });
+  });
+});
+
+app.listen(3000, () => {
+  console.log("🚀 Server running at http://localhost:3000");
+});

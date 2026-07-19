@@ -1,64 +1,108 @@
 const express = require("express");
 const fs = require("fs");
+const path = require("path");
 const { exec } = require("child_process");
-const archiver = require("archiver");
+require("dotenv").config();
+const postToInstagram = require("./utils/instagram");
+const postToFacebook = require("./utils/facebook");
+
+const cloudinary = require("./utils/cloudinary");
 
 const app = express();
+
 app.use(express.json());
 app.use(express.static("frontend"));
-const path = require("path");
 
+const QUEUE_FILE = "quotes.json";
+
+// Create quotes.json if it doesn't exist
+if (!fs.existsSync(QUEUE_FILE)) {
+  fs.writeFileSync(QUEUE_FILE, "[]");
+}
+
+// Home page
 app.get("/", (req, res) => {
   res.sendFile(path.join(__dirname, "frontend", "index.html"));
 });
 
-console.log(__dirname + "\\frontend\\index.html");
-
-const QUEUE_FILE = "quotes.json";
-
-if (!fs.existsSync(QUEUE_FILE)) fs.writeFileSync(QUEUE_FILE, "[]");
-
-// add quote to queue
-app.post("/add-quote", (req, res) => {
+// ==========================
+// Generate Image
+// ==========================
+app.post("/generate", async (req, res) => {
   const { quote } = req.body;
 
-  if (!quote) {
-    return res.status(400).json({ message: "Quote is empty" });
+  if (!quote || quote.trim() === "") {
+    return res.status(400).send("Quote required");
   }
 
-  const queue = JSON.parse(fs.readFileSync("quotes.json"));
+  fs.writeFileSync("quotes.json", JSON.stringify([quote.trim()], null, 2));
 
-  queue.push(quote);
+  exec("node generateImages.js", async (err, stdout, stderr) => {
+    console.log("STDOUT:");
+    console.log(stdout);
 
-  fs.writeFileSync("quotes.json", JSON.stringify(queue, null, 2));
+    console.log("STDERR:");
+    console.log(stderr);
+    if (err) {
+      console.error(stderr);
+      return res.status(500).send(stderr);
+    }
 
-  res.json({ message: "Quote added successfully" });
-});
-// generate reels
-app.post("/generate", (req, res) => {
-  exec("node generateImages.js", (err) => {
-    if (err) return res.status(500).send("Generation failed");
+    const imagePath = path.join(__dirname, "reels", "reel.png");
 
-    const output = fs.createWriteStream("reels.zip");
-    const archive = archiver("zip");
+    try {
+      console.log("Image Path:", imagePath);
+      console.log("Exists:", fs.existsSync(imagePath));
 
-    archive.pipe(output);
-    archive.directory("reels", false);
-    archive.finalize();
+      if (fs.existsSync(imagePath)) {
+        console.log("Stats:", fs.statSync(imagePath));
+      }
 
-    output.on("close", () => {
-      res.download("reels.zip", () => {
-        // delete videos after download
-        fs.rmSync("reels", { recursive: true, force: true });
-        fs.mkdirSync("reels");
-
-        fs.unlinkSync("reels.zip");
-        fs.writeFileSync(QUEUE_FILE, "[]");
+      const result = await cloudinary.uploader.upload(imagePath, {
+        folder: "instagram-quotes",
       });
-    });
+
+      console.log("UPLOAD SUCCESS");
+      console.log(result);
+
+      await postToInstagram(result.secure_url, quote);
+
+      await postToFacebook(result.secure_url, quote);
+
+      await cloudinary.uploader.destroy(result.public_id);
+
+      if (fs.existsSync(imagePath)) {
+        fs.unlinkSync(imagePath);
+      }
+
+      fs.writeFileSync("quotes.json", "[]");
+
+      return res.json({
+        success: true,
+        imageUrl: result.secure_url,
+      });
+    } catch (err) {
+      console.log("========== FULL ERROR ==========");
+      console.log("Message:", err.message);
+      console.log("HTTP Code:", err.http_code);
+      console.log("Name:", err.name);
+      console.log("Stack:", err.stack);
+
+      if (err.response) {
+        console.log("Response:", err.response);
+      }
+
+      console.dir(err, { depth: null });
+
+      return res.status(500).json({
+        message: err.message,
+        http_code: err.http_code,
+        name: err.name,
+      });
+    }
   });
 });
 
 app.listen(3000, () => {
-  console.log("Server running on port 3000");
+  console.log("🚀 Server running at http://localhost:3000");
 });
